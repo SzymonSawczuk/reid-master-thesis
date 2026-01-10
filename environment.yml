@@ -1,0 +1,37 @@
+name: master-thesis-reid
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pytorch
+  - torchvision
+  - torchaudio
+  - pytorch-cuda
+  - numpy
+  - scipy
+  - pandas
+  - matplotlib
+  - seaborn
+  - scikit-learn
+  - opencv
+  - jupyter
+  - ipykernel
+  - tensorboard
+  - pyyaml
+  - tqdm
+  - h5py
+  - pillow
+  - pip
+  - pip:
+      - torchreid
+      - timm
+      - einops
+      - yacs
+      - albumentations
+      - gdown
+      - google-auth
+      - google-auth-oauthlib
+      - google-auth-httplib2
+      - google-api-python-client

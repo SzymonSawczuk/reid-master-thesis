@@ -1,0 +1,508 @@
+person_reid_experiments:
+  osnet_x1_0:
+    model:
+      name: "osnet_x1_0"
+      architecture: "osnet_x1_0"
+      pretrained: true
+      feature_dim: 512
+      loss: "softmax" # Options: "softmax", "triplet"
+
+    dataset:
+      name: "market1501" # Options: "market1501", "dukemtmc"
+      data_type: "preprocessed" # Options: "preprocessed", "augmented", "original"
+      root: "/content/drive/MyDrive/reid_data"
+      k_shot: 16 # Options: 4, 8, 16, 99 (99 = all data)
+
+    training:
+      num_epochs: 60
+      batch_size: 32
+      learning_rate: 0.00035
+      weight_decay: 0.0005
+      optimizer: "adamw" # Options: "adamw", "sgd"
+
+      # Learning rate scheduler
+      lr_scheduler: "warmup_cosine" # Options: "warmup_cosine", "multistep", "step"
+      warmup_epochs: 10
+      lr_milestones: [40, 60] # For multistep scheduler
+      lr_gamma: 0.1 # For multistep/step scheduler
+
+      # Loss configuration
+      criterion: "cross_entropy"
+      label_smoothing: true
+      triplet_margin: 0.3
+
+      # Training options
+      mixed_precision: true
+      save_freq: 10
+
+    device:
+      type: "cuda" # Options: "cuda", "cpu"
+      multi_gpu: false
+      gpu_ids: [0]
+
+  pcb_p6:
+    model:
+      name: "pcb_p6"
+      architecture: "pcb_p6"
+      pretrained: true
+      feature_dim: 256
+      num_stripes: 6
+      loss: "softmax"
+
+    dataset:
+      name: "market1501"
+      data_type: "preprocessed"
+      root: "/content/drive/MyDrive/reid_data"
+      k_shot: 16
+
+    training:
+      num_epochs: 60
+      batch_size: 32
+      learning_rate: 0.00035
+      weight_decay: 0.0005
+      optimizer: "adamw"
+      lr_scheduler: "warmup_cosine"
+      warmup_epochs: 10
+      lr_milestones: [40, 60]
+      lr_gamma: 0.1
+      criterion: "cross_entropy"
+      label_smoothing: true
+      triplet_margin: 0.3
+      mixed_precision: true
+      save_freq: 10
+
+    device:
+      type: "cuda"
+      multi_gpu: false
+
+  pcb_p4:
+    model:
+      name: "pcb_p4"
+      architecture: "pcb_p4"
+      pretrained: true
+      feature_dim: 256
+      num_stripes: 4
+      loss: "softmax"
+
+    dataset:
+      name: "market1501"
+      data_type: "preprocessed"
+      root: "/content/drive/MyDrive/reid_data"
+      k_shot: 16
+
+    training:
+      num_epochs: 60
+      batch_size: 32
+      learning_rate: 0.00035
+      weight_decay: 0.0005
+      optimizer: "adamw"
+      lr_scheduler: "warmup_cosine"
+      warmup_epochs: 10
+      lr_milestones: [40, 60]
+      lr_gamma: 0.1
+      criterion: "cross_entropy"
+      label_smoothing: true
+      triplet_margin: 0.3
+      mixed_precision: true
+      save_freq: 10
+
+    device:
+      type: "cuda"
+      multi_gpu: false
+
+  hacnn:
+    model:
+      name: "hacnn"
+      architecture: "hacnn"
+      pretrained: true
+      feature_dim: 2048
+      loss: "softmax"
+
+    dataset:
+      name: "market1501"
+      data_type: "preprocessed"
+      root: "/content/drive/MyDrive/reid_data"
+      k_shot: 16
+
+    training:
+      num_epochs: 80
+      batch_size: 32
+      learning_rate: 0.01 # Higher LR for SGD
+      weight_decay: 0.0005
+      optimizer: "sgd" # HACNN uses SGD with momentum
+      momentum: 0.9
+
+      lr_scheduler: "multistep"
+      lr_milestones: [40, 60]
+      lr_gamma: 0.1
+
+      criterion: "cross_entropy"
+      label_smoothing: true
+      triplet_margin: 0.3
+      mixed_precision: true
+      save_freq: 10
+
+      img_height: 160
+      img_width: 64
+
+    device:
+      type: "cuda"
+      multi_gpu: false
+
+  transreid_base:
+    model:
+      name: "transreid_base"
+      architecture: "transreid_base"
+      pretrained: true
+      feature_dim: 768
+      patch_size: 16
+      img_size: 256
+      loss: "softmax"
+
+    dataset:
+      name: "market1501"
+      data_type: "preprocessed"
+      root: "/content/drive/MyDrive/reid_data"
+      k_shot: 16
+
+    training:
+      num_epochs: 120
+      batch_size: 32
+      learning_rate: 0.0003
+      weight_decay: 0.0005
+      optimizer: "adamw"
+      lr_scheduler: "warmup_cosine"
+      warmup_epochs: 10
+      lr_milestones: [40, 60]
+      lr_gamma: 0.1
+      criterion: "cross_entropy"
+      label_smoothing: true
+      triplet_margin: 0.3
+      mixed_precision: true
+      save_freq: 10
+
+    device:
+      type: "cuda"
+      multi_gpu: false
+
+  autoreid_plus:
+    model:
+      name: "autoreid_plus"
+      architecture: "autoreid_plus"
+      pretrained: false
+      feature_dim: 512
+      loss: "softmax"
+
+    dataset:
+      name: "market1501"
+      data_type: "preprocessed"
+      root: "/content/drive/MyDrive/reid_data"
+      k_shot: 16
+
+    training:
+      num_epochs: 80
+      batch_size: 32
+      learning_rate: 0.00035
+      weight_decay: 0.0005
+      optimizer: "adamw"
+      lr_scheduler: "warmup_cosine"
+      warmup_epochs: 10
+      lr_milestones: [40, 60]
+      lr_gamma: 0.1
+      criterion: "cross_entropy"
+      label_smoothing: true
+      triplet_margin: 0.3
+      mixed_precision: true
+      save_freq: 10
+
+    device:
+      type: "cuda"
+      multi_gpu: false
+
+vehicle_reid_experiments:
+  resnet50_vehicle:
+    model:
+      name: "resnet50"
+      architecture: "resnet50_vehicle"
+      pretrained: true
+      feature_dim: 2048
+      loss: "softmax"
+
+    dataset:
+      name: "veri776" # Options: "veri776", "cityflow"
+      data_type: "preprocessed"
+      root: "/content/drive/MyDrive/reid_data"
+      k_shot: 16
+
+    training:
+      num_epochs: 60
+      batch_size: 32
+      learning_rate: 0.00035
+      weight_decay: 0.0005
+      optimizer: "adamw"
+      lr_scheduler: "warmup_cosine"
+      warmup_epochs: 10
+      lr_milestones: [40, 60]
+      lr_gamma: 0.1
+      criterion: "cross_entropy"
+      label_smoothing: true
+      triplet_margin: 0.3
+      mixed_precision: true
+      save_freq: 10
+
+      # Vehicles use square images
+      img_height: 256
+      img_width: 256
+
+    device:
+      type: "cuda"
+      multi_gpu: false
+
+  aaver:
+    model:
+      name: "aaver"
+      architecture: "aaver"
+      pretrained: true
+      feature_dim: 2048
+      loss: "softmax"
+
+    dataset:
+      name: "veri776"
+      data_type: "preprocessed"
+      root: "/content/drive/MyDrive/reid_data"
+      k_shot: 16
+
+    training:
+      num_epochs: 60
+      batch_size: 32
+      learning_rate: 0.00035
+      weight_decay: 0.0005
+      optimizer: "adamw"
+      lr_scheduler: "warmup_cosine"
+      warmup_epochs: 10
+      lr_milestones: [40, 60]
+      lr_gamma: 0.1
+      criterion: "cross_entropy"
+      label_smoothing: true
+      triplet_margin: 0.3
+      mixed_precision: true
+      save_freq: 10
+
+      img_height: 256
+      img_width: 256
+
+    device:
+      type: "cuda"
+      multi_gpu: false
+
+  rptm:
+    model:
+      name: "rptm"
+      architecture: "rptm"
+      pretrained: true
+      feature_dim: 2048
+      loss: "softmax"
+
+    dataset:
+      name: "veri776"
+      data_type: "preprocessed"
+      root: "/content/drive/MyDrive/reid_data"
+      k_shot: 16
+
+    training:
+      num_epochs: 60
+      batch_size: 32
+      learning_rate: 0.00035
+      weight_decay: 0.0005
+      optimizer: "adamw"
+      lr_scheduler: "warmup_cosine"
+      warmup_epochs: 10
+      lr_milestones: [40, 60]
+      lr_gamma: 0.1
+      criterion: "cross_entropy"
+      label_smoothing: true
+      triplet_margin: 0.3
+      mixed_precision: true
+      save_freq: 10
+
+      img_height: 256
+      img_width: 256
+
+    device:
+      type: "cuda"
+      multi_gpu: false
+
+  vat:
+    model:
+      name: "vat"
+      architecture: "vat"
+      pretrained: true
+      feature_dim: 768
+      loss: "softmax"
+
+    dataset:
+      name: "veri776"
+      data_type: "preprocessed"
+      root: "/content/drive/MyDrive/reid_data"
+      k_shot: 16
+
+    training:
+      num_epochs: 60
+      batch_size: 32
+      learning_rate: 0.00035
+      weight_decay: 0.0005
+      optimizer: "adamw"
+      lr_scheduler: "warmup_cosine"
+      warmup_epochs: 10
+      lr_milestones: [40, 60]
+      lr_gamma: 0.1
+      criterion: "cross_entropy"
+      label_smoothing: true
+      triplet_margin: 0.3
+      mixed_precision: true
+      save_freq: 10
+
+      img_height: 256
+      img_width: 256
+
+    device:
+      type: "cuda"
+      multi_gpu: false
+
+  transreid_base_vehicle:
+    model:
+      name: "transreid_base"
+      architecture: "transreid_base"
+      pretrained: true
+      feature_dim: 768
+      patch_size: 16
+      img_size: 256
+      loss: "softmax"
+
+    dataset:
+      name: "market1501"
+      data_type: "preprocessed"
+      root: "/content/drive/MyDrive/reid_data"
+      k_shot: 16
+
+    training:
+      num_epochs: 120
+      batch_size: 32
+      learning_rate: 0.0003
+      weight_decay: 0.0005
+      optimizer: "adamw"
+      lr_scheduler: "warmup_cosine"
+      warmup_epochs: 10
+      lr_milestones: [40, 60]
+      lr_gamma: 0.1
+      criterion: "cross_entropy"
+      label_smoothing: true
+      triplet_margin: 0.3
+      mixed_precision: true
+      save_freq: 10
+
+    device:
+      type: "cuda"
+      multi_gpu: false
+
+evaluation:
+  metrics: ["rank1", "rank5", "rank10", "rank20", "mAP", "mINP"]
+
+  # Re-ranking configuration
+  reranking: true
+  reranking_k1: 20
+  reranking_k2: 6
+  reranking_lambda: 0.3
+
+  # Distance metric
+  distance_metric: "euclidean" # Options: "euclidean", "cosine"
+
+  # Feature normalization
+  normalize_features: true
+
+  # Performance measurement
+  measure_inference_time: true
+  num_warmup_iterations: 10
+  num_timing_iterations: 100
+
+  # Visualization
+  visualize_top_k: 10
+  save_visualizations: true
+
+paths:
+  data_root: "/content/drive/MyDrive/reid_data"
+  model_root: "/content/drive/MyDrive/reid_models"
+  results_root: "/content/drive/MyDrive/reid_results"
+  project_root: "/content/master-thesis-reid"
+  config_dir: "/content/master-thesis-reid/config"
+
+batch_experiments:
+  osnet_x1_0:
+    enabled: true
+    datasets: ["market1501"]
+    k_shots: [4, 99]
+    data_types: ["preprocessed", "augmented"]
+    losses: ["triplet", "softmax+triplet"]
+
+  pcb_p6:
+    enabled: true
+    datasets: ["market1501"]
+    k_shots: [4, 8, 16, 99]
+    data_types: ["preprocessed"]
+    losses: ["softmax+triplet"]
+
+  hacnn:
+    enabled: true
+    datasets: ["market1501"]
+    k_shots: [4, 8, 16, 99]
+    data_types: ["preprocessed"]
+    losses: ["softmax+triplet"]
+
+  transreid_base:
+    enabled: true
+    datasets: ["market1501"]
+    k_shots: [4, 8, 16]
+    data_types: ["preprocessed"]
+    losses: ["softmax"]
+
+  autoreid_plus:
+    enabled: true
+    datasets: ["market1501"]
+    k_shots: [4, 8, 16]
+    data_types: ["preprocessed"]
+    losses: ["softmax+triplet"]
+
+  resnet50_vehicle:
+    enabled: true
+    datasets: ["veri776"]
+    k_shots: [4, 8, 16, 99]
+    data_types: ["preprocessed"]
+    losses: ["softmax"]
+
+  aaver:
+    enabled: true
+    datasets: ["veri776"]
+    k_shots: [4, 8, 16, 99]
+    data_types: ["preprocessed"]
+    losses: ["softmax"]
+
+  rptm:
+    enabled: true
+    datasets: ["veri776"]
+    k_shots: [4, 8, 16, 99]
+    data_types: ["preprocessed", "augmented"]
+    losses: ["softmax+triplet"]
+
+  vat:
+    enabled: true
+    datasets: ["veri776"]
+    k_shots: [4, 8, 16, 99]
+    data_types: ["preprocessed"]
+    losses: ["softmax"]
+
+  transreid_base_vehicle:
+    enabled: true
+    datasets: ["veri776"]
+    k_shots: [99]
+    data_types: ["preprocessed"]
+    losses: ["softmax"]

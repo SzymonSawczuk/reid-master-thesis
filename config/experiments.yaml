@@ -1,0 +1,479 @@
+global_methodology:
+  random_seed: 42 # For reproducibility
+
+  # Paths
+  model_root: "/content/drive/MyDrive/reid_models"
+  results_dir: "/content/drive/MyDrive/reid_results/experiments"
+  data_root: "/content/drive/MyDrive/reid_data"
+
+  # Re-ranking configuration (default for all experiments)
+  reranking:
+    k1: 20
+    k2: 6
+    lambda_value: 0.3
+
+  # Evaluation metrics (used for all experiments)
+  metrics: ["rank1", "rank5", "rank10", "rank20", "mAP", "mINP"]
+
+  # Feature extraction settings
+  batch_size_test: 128
+  num_workers: 4
+  normalize_features: true
+
+  # Performance measurement
+  measure_inference_time: true
+  num_warmup_iterations: 10
+  num_timing_iterations: 100
+
+experiment_evaluations:
+  # Experiment 1: Person architecture comparison
+  person_architectures_k16:
+    enabled: true
+    dataset: "market1501"
+    k_shot: 16
+    data_type: "preprocessed"
+    models:
+      - {
+          name: "OSNet-x1.0",
+          model: "osnet_x1_0",
+          checkpoint: "final_model.pth",
+          loss: "softmax+triplet",
+        }
+      - {
+          name: "PCB-p6",
+          model: "pcb_p6",
+          checkpoint: "final_model.pth",
+          loss: "softmax+triplet",
+        }
+      - {
+          name: "HACNN",
+          model: "hacnn",
+          checkpoint: "final_model.pth",
+          loss: "softmax+triplet",
+        }
+      - {
+          name: "TransReID-Base",
+          model: "transreid_base",
+          checkpoint: "final_model.pth",
+          loss: "softmax",
+        }
+      - {
+          name: "Auto-ReID+",
+          model: "autoreid_plus",
+          checkpoint: "final_model.pth",
+          loss: "softmax+triplet",
+        }
+
+  # Experiment 2: Vehicle architecture comparison
+  vehicle_architectures_k16:
+    enabled: true
+    dataset: "veri776"
+    k_shot: 16
+    data_type: "preprocessed"
+    models:
+      - {
+          name: "ResNet-50",
+          model: "resnet50_vehicle",
+          checkpoint: "final_model.pth",
+          loss: "softmax",
+        }
+      - {
+          name: "AAVER",
+          model: "aaver",
+          checkpoint: "final_model.pth",
+          loss: "softmax",
+        }
+      - {
+          name: "RPTM",
+          model: "rptm",
+          checkpoint: "final_model.pth",
+          loss: "softmax+triplet",
+        }
+      - {
+          name: "VAT",
+          model: "vat",
+          checkpoint: "final_model.pth",
+          loss: "softmax",
+        }
+
+  # Experiment 3: K-shot analysis - Person
+  person_kshot_k4:
+    enabled: true
+    dataset: "market1501"
+    k_shot: 4
+    data_type: "preprocessed"
+    models:
+      - {
+          name: "OSNet-x1.0",
+          model: "osnet_x1_0",
+          checkpoint: "final_model.pth",
+          loss: "softmax+triplet",
+        }
+      - {
+          name: "PCB-p6",
+          model: "pcb_p6",
+          checkpoint: "final_model.pth",
+          loss: "softmax+triplet",
+        }
+      - {
+          name: "HACNN",
+          model: "hacnn",
+          checkpoint: "final_model.pth",
+          loss: "softmax+triplet",
+        }
+      - {
+          name: "TransReID-Base",
+          model: "transreid_base",
+          checkpoint: "final_model.pth",
+          loss: "softmax",
+        }
+      - {
+          name: "Auto-ReID+",
+          model: "autoreid_plus",
+          checkpoint: "final_model.pth",
+          loss: "softmax+triplet",
+        }
+
+  person_kshot_k8:
+    enabled: true
+    dataset: "market1501"
+    k_shot: 8
+    data_type: "preprocessed"
+    models:
+      - {
+          name: "OSNet-x1.0",
+          model: "osnet_x1_0",
+          checkpoint: "final_model.pth",
+          loss: "softmax+triplet",
+        }
+      - {
+          name: "PCB-p6",
+          model: "pcb_p6",
+          checkpoint: "final_model.pth",
+          loss: "softmax+triplet",
+        }
+      - {
+          name: "HACNN",
+          model: "hacnn",
+          checkpoint: "final_model.pth",
+          loss: "softmax+triplet",
+        }
+      - {
+          name: "TransReID-Base",
+          model: "transreid_base",
+          checkpoint: "final_model.pth",
+          loss: "softmax",
+        }
+      - {
+          name: "Auto-ReID+",
+          model: "autoreid_plus",
+          checkpoint: "final_model.pth",
+          loss: "softmax+triplet",
+        }
+
+  person_kshot_k99:
+    enabled: true
+    dataset: "market1501"
+    k_shot: 99
+    data_type: "preprocessed"
+    models:
+      - {
+          name: "OSNet-x1.0",
+          model: "osnet_x1_0",
+          checkpoint: "final_model.pth",
+          loss: "softmax+triplet",
+        }
+      - {
+          name: "PCB-p6",
+          model: "pcb_p6",
+          checkpoint: "final_model.pth",
+          loss: "softmax+triplet",
+        }
+      - {
+          name: "HACNN",
+          model: "hacnn",
+          checkpoint: "final_model.pth",
+          loss: "softmax+triplet",
+        }
+      - {
+          name: "TransReID-Base",
+          model: "transreid_base",
+          checkpoint: "final_model.pth",
+          loss: "softmax",
+        }
+      - {
+          name: "Auto-ReID+",
+          model: "autoreid_plus",
+          checkpoint: "final_model.pth",
+          loss: "softmax+triplet",
+        }
+
+  # Experiment 3: K-shot analysis - Vehicle
+  vehicle_kshot_k4:
+    enabled: true
+    dataset: "veri776"
+    k_shot: 4
+    data_type: "preprocessed"
+    models:
+      - {
+          name: "ResNet-50",
+          model: "resnet50_vehicle",
+          checkpoint: "final_model.pth",
+          loss: "softmax",
+        }
+      - {
+          name: "AAVER",
+          model: "aaver",
+          checkpoint: "final_model.pth",
+          loss: "softmax",
+        }
+      - {
+          name: "RPTM",
+          model: "rptm",
+          checkpoint: "final_model.pth",
+          loss: "softmax+triplet",
+        }
+
+  vehicle_kshot_k8:
+    enabled: true
+    dataset: "veri776"
+    k_shot: 8
+    data_type: "preprocessed"
+    models:
+      - {
+          name: "ResNet-50",
+          model: "resnet50_vehicle",
+          checkpoint: "final_model.pth",
+          loss: "softmax",
+        }
+      - {
+          name: "AAVER",
+          model: "aaver",
+          checkpoint: "final_model.pth",
+          loss: "softmax",
+        }
+      - {
+          name: "RPTM",
+          model: "rptm",
+          checkpoint: "final_model.pth",
+          loss: "softmax+triplet",
+        }
+
+  vehicle_kshot_k99:
+    enabled: true
+    dataset: "veri776"
+    k_shot: 99
+    data_type: "preprocessed"
+    models:
+      - {
+          name: "ResNet-50",
+          model: "resnet50_vehicle",
+          checkpoint: "final_model.pth",
+          loss: "softmax",
+        }
+      - {
+          name: "AAVER",
+          model: "aaver",
+          checkpoint: "final_model.pth",
+          loss: "softmax",
+        }
+      - {
+          name: "RPTM",
+          model: "rptm",
+          checkpoint: "final_model.pth",
+          loss: "softmax+triplet",
+        }
+
+  # Experiment 4: Loss function comparison
+  loss_comparison_softmax:
+    enabled: true
+    dataset: "market1501"
+    k_shot: 16
+    data_type: "preprocessed"
+    models:
+      - {
+          name: "OSNet-Softmax",
+          model: "osnet_x1_0",
+          checkpoint: "final_model.pth",
+          loss: "softmax",
+        }
+
+  loss_comparison_triplet:
+    enabled: true
+    dataset: "market1501"
+    k_shot: 16
+    data_type: "preprocessed"
+    models:
+      - {
+          name: "OSNet-Triplet",
+          model: "osnet_x1_0",
+          checkpoint: "final_model.pth",
+          loss: "triplet",
+        }
+
+  # Experiment 5: Augmentation comparison
+  augmentation_k4_preprocessed:
+    enabled: true
+    dataset: "market1501"
+    k_shot: 4
+    data_type: "preprocessed"
+    models:
+      - {
+          name: "OSNet-Preprocessed",
+          model: "osnet_x1_0",
+          checkpoint: "final_model.pth",
+          loss: "softmax+triplet",
+        }
+
+  augmentation_k4_augmented:
+    enabled: true
+    dataset: "market1501"
+    k_shot: 4
+    data_type: "augmented"
+    models:
+      - {
+          name: "OSNet-Augmented",
+          model: "osnet_x1_0",
+          checkpoint: "final_model.pth",
+          loss: "softmax+triplet",
+        }
+
+  augmentation_k8_preprocessed:
+    enabled: true
+    dataset: "market1501"
+    k_shot: 8
+    data_type: "preprocessed"
+    models:
+      - {
+          name: "OSNet-Preprocessed",
+          model: "osnet_x1_0",
+          checkpoint: "final_model.pth",
+          loss: "softmax+triplet",
+        }
+
+  augmentation_k8_augmented:
+    enabled: true
+    dataset: "market1501"
+    k_shot: 8
+    data_type: "augmented"
+    models:
+      - {
+          name: "OSNet-Augmented",
+          model: "osnet_x1_0",
+          checkpoint: "final_model.pth",
+          loss: "softmax+triplet",
+        }
+
+  # Experiment 6: Re-ranking evaluation
+  noreranking_evaluation:
+    enabled: true
+    reranking: false
+    dataset: "market1501"
+    k_shot: 16
+    data_type: "preprocessed"
+    models:
+      - {
+          name: "OSNet-x1.0",
+          model: "osnet_x1_0",
+          checkpoint: "final_model.pth",
+          loss: "softmax+triplet",
+        }
+      - {
+          name: "PCB-p6",
+          model: "pcb_p6",
+          checkpoint: "final_model.pth",
+          loss: "softmax+triplet",
+        }
+      - {
+          name: "HACNN",
+          model: "hacnn",
+          checkpoint: "final_model.pth",
+          loss: "softmax+triplet",
+        }
+      - {
+          name: "TransReID-Base",
+          model: "transreid_base",
+          checkpoint: "final_model.pth",
+          loss: "softmax",
+        }
+      - {
+          name: "Auto-ReID+",
+          model: "autoreid_plus",
+          checkpoint: "final_model.pth",
+          loss: "softmax+triplet",
+        }
+
+  noreranking_evaluation_vehicle:
+    enabled: true
+    reranking: false
+    dataset: "veri776"
+    k_shot: 16
+    data_type: "preprocessed"
+    models:
+      - {
+          name: "ResNet-50",
+          model: "resnet50_vehicle",
+          checkpoint: "final_model.pth",
+          loss: "softmax",
+        }
+      - {
+          name: "AAVER",
+          model: "aaver",
+          checkpoint: "final_model.pth",
+          loss: "softmax",
+        }
+      - {
+          name: "RPTM",
+          model: "rptm",
+          checkpoint: "final_model.pth",
+          loss: "softmax+triplet",
+        }
+      - {
+          name: "VAT",
+          model: "vat",
+          checkpoint: "final_model.pth",
+          loss: "softmax",
+        }
+
+  # Experiment 7: Cross-domain evaluation - Person (Market-1501 → DukeMTMC)
+  cross_domain_person_osnet:
+    enabled: true
+    dataset: "dukemtmc" # Test on DukeMTMC
+    k_shot: 16
+    data_type: "preprocessed"
+    models:
+      - {
+          name: "OSNet-x1.0 (Market→Duke)",
+          model: "osnet_x1_0",
+          checkpoint: "final_model.pth",
+          loss: "softmax+triplet",
+          train_dataset: "market1501",
+        }
+
+    cross_domain_person_osnet:
+      enabled: true
+      dataset: "dukemtmc" # Test on DukeMTMC
+      k_shot: 16
+      data_type: "augmented"
+      models:
+        - {
+            name: "OSNet-x1.0 (Market→Duke)",
+            model: "osnet_x1_0",
+            checkpoint: "final_model.pth",
+            loss: "softmax+triplet",
+            train_dataset: "market1501",
+          }
+
+  cross_domain_person_transreid:
+    enabled: true
+    dataset: "dukemtmc" # Test on DukeMTMC
+    k_shot: 16
+    data_type: "preprocessed"
+    models:
+      - {
+          name: "TransReID-Base (Market→Duke)",
+          model: "transreid_base",
+          checkpoint: "final_model.pth",
+          loss: "softmax+triplet",
+          train_dataset: "market1501",
+        }

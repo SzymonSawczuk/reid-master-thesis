@@ -1,0 +1,49 @@
+datasets:
+  market1501:
+    root: "/content/drive/MyDrive/reid_data/market1501"
+    type: "person"
+    folders:
+      train: "bounding_box_train"
+      test: "bounding_box_test"
+      query: "query"
+
+  dukemtmc:
+    root: "/content/drive/MyDrive/reid_data/DukeMTMC-reID"
+    download_url: ""
+    type: "person"
+    folders:
+      train: "bounding_box_train"
+      test: "bounding_box_test"
+      query: "query"
+
+  veri776:
+    root: "/content/drive/MyDrive/reid_data/VeRi-776"
+    download_url: ""
+    type: "vehicle"
+    folders:
+      train: "bounding_box_train"
+      test: "bounding_box_test"
+      query: "query"
+
+  cityflow:
+    root: "/content/drive/MyDrive/reid_data/CityFlow"
+    download_url: ""
+    type: "vehicle"
+    folders:
+      train: "bounding_box_train"
+      test: "bounding_box_test"
+      query: "query"
+
+few_shot:
+  k_shots: [4, 8, 16]
+  default_k: 4
+  seed: 42
+  num_instances: 4
+
+data_loading:
+  height: 256
+  width: 128
+  batch_size_train: 32
+  batch_size_test: 100
+  num_workers: 4
+  use_opencv_augmentation: true

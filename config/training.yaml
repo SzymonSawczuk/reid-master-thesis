@@ -1,0 +1,103 @@
+training:
+  batch_size: 32
+  num_epochs: 120
+  learning_rate: 0.00035
+  weight_decay: 0.0005
+
+  lr_scheduler: "warmup_cosine"
+  warmup_epochs: 10
+
+  lr_milestones: [40, 70]
+  lr_gamma: 0.1
+
+  optimizer:
+    adamw:
+      betas: [0.9, 0.999]
+      eps: 1.0e-8
+    sgd_momentum:
+      momentum: 0.9
+      nesterov: true
+
+  loss:
+    type: "triplet_classification"
+    triplet_margin: 0.3
+
+    label_smoothing: 0.1
+
+    triplet_loss_weight: 1.0
+    classification_loss_weight: 1.0
+
+  augmentation:
+    opencv:
+      rotation: true
+      rotation_angle_range: [-10, 10]
+
+      flip: true
+      flip_probability: 0.5
+
+      crop: true
+      crop_scale_range: [0.8, 1.0]
+
+      brightness: true
+      brightness_delta_range: [-30, 30]
+
+      contrast: true
+      contrast_factor_range: [0.8, 1.2]
+
+      saturation: true
+      saturation_factor_range: [0.8, 1.2]
+
+      hue: true
+      hue_delta_range: [-10, 10]
+
+      noise: false
+      noise_sigma_range: [0, 5]
+
+      blur: true
+      blur_probability: 0.3
+      blur_kernel_size_range: [3, 7]
+
+    random_flip: true
+    random_crop: true
+    random_erase: true
+    color_jitter: true
+
+  checkpoint_freq: 10
+  save_best_only: false
+  log_interval: 50
+
+few_shot:
+  enabled: true
+  k_values: [4, 8, 16]
+  num_instances: 4
+  seed: 42
+
+evaluation:
+  metrics: ["rank1", "rank5", "rank10", "rank20", "mAP", "mINP"]
+
+  reranking: false
+  reranking_k1: 20
+  reranking_k2: 6
+  reranking_lambda: 0.3
+
+  distance_metric: "euclidean"
+
+  visualize_top_k: 10
+  save_visualizations: true
+
+gpu:
+  device: "cuda"
+  mixed_precision: true
+
+  multi_gpu: false
+  gpu_ids: [0]
+
+preprocessing:
+  image_size: [256, 128]
+  interpolation: "linear"
+
+  normalize: true
+  mean: [0.485, 0.456, 0.406]
+  std: [0.229, 0.224, 0.225]
+
+  color_space: "rgb"
