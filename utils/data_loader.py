@@ -14,7 +14,7 @@ from typing import Optional, Tuple, Dict, Callable
 import torchvision.transforms as T
 
 try:
-    from .config_loader import get_dataloader_params_from_config
+    from utils.config_loader import get_dataloader_params_from_config
 except ImportError:
     get_dataloader_params_from_config = None
 
@@ -177,10 +177,12 @@ class ReIDDataset(Dataset):
         if opencv_augment:
             self.opencv_aug = OpenCVAugmentation(augment_config)
 
-        # For CityFlow: load camera ID mapping from XML if available
+        # For CityFlow: load camera ID and vehicle ID mappings
         self._cityflow_camid_map = {}
+        self._cityflow_pid_map = {}  # Maps filename -> vehicleID
         if self.dataset_type == 'cityflow':
             self._load_cityflow_xml()
+            self._load_cityflow_tracks()
 
         self.img_paths = []
         self.pids = []
@@ -221,6 +223,43 @@ class ReIDDataset(Dataset):
 
             except Exception as e:
                 pass
+
+    def _load_cityflow_tracks(self):
+        """
+        Load CityFlow vehicle ID mapping from track files.
+
+        Parses train_track.txt and test_track.txt where each line contains
+        filenames for images of the same vehicle. The line number becomes the vehicleID.
+        """
+        parent_dir = self.data_dir.parent
+
+        # Look for track files in parent directory and current directory
+        track_files = list(parent_dir.glob('*_track.txt'))
+        track_files.extend(list(self.data_dir.glob('*_track.txt')))
+
+        if not track_files:
+            # Fallback: if no track files found, warn but continue
+            # (will use filename-based PID parsing as fallback)
+            print(f"Warning: No track files found for CityFlow in {parent_dir} or {self.data_dir}")
+            print(f"  Falling back to filename-based vehicle ID parsing")
+            return
+
+        for track_file in track_files:
+            try:
+                with open(track_file, 'r') as f:
+                    for vehicle_id, line in enumerate(f, start=1):
+                        # Each line contains space-separated filenames for one vehicle
+                        filenames = line.strip().split()
+
+                        for filename in filenames:
+                            # Map each filename to its vehicle ID
+                            self._cityflow_pid_map[filename] = vehicle_id
+
+                print(f"Loaded {len(self._cityflow_pid_map)} image->vehicleID mappings from {track_file.name}")
+
+            except Exception as e:
+                print(f"Warning: Failed to load track file {track_file}: {e}")
+                continue
 
     def _parse_market1501(self, filename: str) -> Optional[Tuple[int, int]]:
         """
@@ -278,25 +317,41 @@ class ReIDDataset(Dataset):
 
     def _parse_cityflow(self, filename: str) -> Optional[Tuple[int, int]]:
         """
-        Parse CityFlow format: 000001.jpg
-        Vehicle ID is the filename number itself.
-        Camera ID comes from XML files (loaded separately).
+        Parse CityFlow format using track files.
+
+        Vehicle ID comes from track files (train_track.txt, test_track.txt).
+        Camera ID comes from XML files (*_label.xml).
+
+        Fallback: If track files are not available, use filename number as vehicleID.
+
         Returns: (pid, camid) or None
         """
-        name_without_ext = filename.split('.')[0]
+        # Try to get vehicleID from track mapping first
+        pid = self._cityflow_pid_map.get(filename)
 
-        try:
-            pid = int(name_without_ext)
+        if pid is None:
+            # Fallback: parse filename as vehicleID (e.g., 000001.jpg -> vehicleID=1)
+            # This is less accurate but works if track files are missing
+            name_without_ext = filename.split('.')[0]
+            try:
+                pid = int(name_without_ext)
+            except (ValueError, IndexError):
+                return None
 
-            camid = getattr(self, '_cityflow_camid_map', {}).get(filename, 0)
+        # Get cameraID from XML mapping
+        camid = self._cityflow_camid_map.get(filename, 0)
 
-            return (pid, camid)
-        except (ValueError, IndexError):
-            return None
+        return (pid, camid)
 
     def _parse_data(self):
         """Parse dataset based on dataset_type."""
         img_paths = list(self.data_dir.glob('*.jpg')) + list(self.data_dir.glob('*.png'))
+
+        # Debug for CityFlow
+        if self.dataset_type == 'cityflow':
+            print(f"[CityFlow] Found {len(img_paths)} image files in {self.data_dir}")
+            if len(img_paths) > 0:
+                print(f"[CityFlow] Sample filenames: {[p.name for p in img_paths[:5]]}")
 
         parser_map = {
             'market1501': self._parse_market1501,
@@ -309,6 +364,7 @@ class ReIDDataset(Dataset):
 
         parser = parser_map.get(self.dataset_type, self._parse_market1501)
 
+        parsed_count = 0
         for img_path in img_paths:
             filename = img_path.name
             result = parser(filename)
@@ -318,6 +374,13 @@ class ReIDDataset(Dataset):
                 self.img_paths.append(str(img_path))
                 self.pids.append(pid)
                 self.camids.append(camid)
+                parsed_count += 1
+
+        # Debug for CityFlow
+        if self.dataset_type == 'cityflow':
+            print(f"[CityFlow] Successfully parsed {parsed_count}/{len(img_paths)} images")
+            if parsed_count < len(img_paths):
+                print(f"[CityFlow] WARNING: {len(img_paths) - parsed_count} images were skipped!")
 
     def __len__(self) -> int:
         return self.num_imgs
@@ -509,6 +572,252 @@ def create_test_dataloader(
     return dataloader
 
 
+def get_cityflow_dataloaders(
+    dataset_path: Path,
+    k_shot: int = 4,
+    batch_size_train: int = 32,
+    batch_size_test: int = 100,
+    height: int = 256,
+    width: int = 128,
+    num_workers: int = 4,
+    seed: Optional[int] = None,
+    opencv_augment: bool = True,
+    augment_config: Optional[Dict] = None
+) -> Dict[str, DataLoader]:
+    """
+    Create CityFlow dataloaders with proper query/gallery splitting.
+
+    For CityFlow, the test set is split as follows:
+    - Query: First image from each vehicle track
+    - Gallery: Remaining images from each vehicle track
+
+    This ensures query and gallery don't overlap while maintaining vehicleID info.
+
+    Args:
+        dataset_path: Path to CityFlow dataset directory
+        k_shot: Number of shots for few-shot learning
+        batch_size_train: Training batch size
+        batch_size_test: Test batch size
+        height: Image height
+        width: Image width
+        num_workers: Number of workers
+        seed: Random seed
+        opencv_augment: Whether to use OpenCV augmentations
+        augment_config: Augmentation configuration
+
+    Returns:
+        Dictionary with 'train', 'query', and 'gallery' dataloaders
+    """
+    print(f"[CityFlow] Loading dataset from {dataset_path}")
+
+    # Create train loader (standard approach)
+    train_dir = dataset_path / 'image_train'
+    if not train_dir.exists():
+        print(f"[CityFlow] WARNING: Training directory not found: {train_dir}")
+
+    train_loader = create_fewshot_dataset(
+        data_dir=str(train_dir),
+        k_shot=k_shot,
+        batch_size=batch_size_train,
+        height=height,
+        width=width,
+        num_workers=num_workers,
+        seed=seed,
+        opencv_augment=opencv_augment,
+        augment_config=augment_config,
+        dataset_type='cityflow'
+    )
+
+    # Load test set and split into query and gallery
+    test_dir = dataset_path / 'image_test'
+    if not test_dir.exists():
+        print(f"[CityFlow] ERROR: Test directory not found: {test_dir}")
+        raise FileNotFoundError(f"CityFlow test directory not found: {test_dir}")
+
+    # Load track file to determine query and gallery splits
+    test_track_file = dataset_path / 'test_track.txt'
+    if not test_track_file.exists():
+        # Try parent directory
+        test_track_file = dataset_path.parent / 'test_track.txt'
+
+    if not test_track_file.exists():
+        print(f"[CityFlow] ERROR: test_track.txt not found!")
+        raise FileNotFoundError(f"test_track.txt not found in {dataset_path} or parent directory")
+
+    # Parse track file to determine query and gallery splits
+    print(f"[CityFlow] Loading track file: {test_track_file}")
+    query_filenames = set()
+    gallery_filenames = set()
+    single_image_tracks = 0
+
+    with open(test_track_file, 'r') as f:
+        for line in f:
+            filenames = line.strip().split()
+            if len(filenames) > 0:
+                # First image of each track = query
+                query_filenames.add(filenames[0])
+
+                # Remaining images = gallery
+                if len(filenames) > 1:
+                    gallery_filenames.update(filenames[1:])
+                else:
+                    # Single-image track: add to both query and gallery
+                    # This is standard practice in ReID - self-matches will be filtered during evaluation
+                    gallery_filenames.add(filenames[0])
+                    single_image_tracks += 1
+
+    print(f"[CityFlow] Query images: {len(query_filenames)}")
+    print(f"[CityFlow] Gallery images: {len(gallery_filenames)}")
+    if single_image_tracks > 0:
+        print(f"[CityFlow] Single-image tracks: {single_image_tracks} (added to both query and gallery)")
+
+    # Load full test dataset
+    full_test_dataset = ReIDDataset(
+        data_dir=str(test_dir),
+        dataset_type='cityflow',
+        height=height,
+        width=width,
+        opencv_augment=False
+    )
+
+    # Filter into query and gallery based on filenames
+    query_img_paths = []
+    query_pids = []
+    query_camids = []
+    gallery_img_paths = []
+    gallery_pids = []
+    gallery_camids = []
+
+    # CityFlow-specific: Assign different camera IDs to query vs gallery
+    # This is required because torchreid's evaluation filters out gallery samples
+    # with matching (PID, camID) pairs. CityFlow tracks contain images from the
+    # same camera, so we assign a special camera ID (999) to all query images.
+    QUERY_CAMERA_ID = 999
+
+    for idx, img_path in enumerate(full_test_dataset.img_paths):
+        filename = Path(img_path).name
+
+        if filename in query_filenames:
+            query_img_paths.append(img_path)
+            query_pids.append(full_test_dataset.pids[idx])
+            # Use special camera ID for query to ensure it differs from gallery
+            query_camids.append(QUERY_CAMERA_ID)
+
+        if filename in gallery_filenames:
+            gallery_img_paths.append(img_path)
+            gallery_pids.append(full_test_dataset.pids[idx])
+            # Keep original camera ID for gallery
+            gallery_camids.append(full_test_dataset.camids[idx])
+
+    print(f"[CityFlow] Query indices found: {len(query_img_paths)}")
+    print(f"[CityFlow] Gallery indices found: {len(gallery_img_paths)}")
+
+    # Debug: Check PID overlap
+    query_pid_set = set(query_pids)
+    gallery_pid_set = set(gallery_pids)
+    overlap = query_pid_set.intersection(gallery_pid_set)
+    missing = query_pid_set - gallery_pid_set
+
+    print(f"[CityFlow] Query unique PIDs: {len(query_pid_set)}")
+    print(f"[CityFlow] Gallery unique PIDs: {len(gallery_pid_set)}")
+    print(f"[CityFlow] PIDs in both: {len(overlap)}")
+    if len(missing) > 0:
+        print(f"[CityFlow] ERROR: Query PIDs missing from gallery: {len(missing)}")
+        print(f"[CityFlow]   Missing PIDs (first 10): {sorted(list(missing))[:10]}")
+
+    # Debug: Check camera ID distribution
+    query_camid_set = set(query_camids)
+    gallery_camid_set = set(gallery_camids)
+    print(f"[CityFlow] Query unique camera IDs: {sorted(query_camid_set)}")
+    print(f"[CityFlow] Gallery unique camera IDs: {sorted(gallery_camid_set)}")
+
+    # Debug: Check for each query PID, how many different camera IDs exist in gallery
+    pid_camid_issues = 0
+    for q_pid in list(query_pid_set)[:5]:  # Check first 5 PIDs as sample
+        q_indices = [i for i, pid in enumerate(query_pids) if pid == q_pid]
+        g_indices = [i for i, pid in enumerate(gallery_pids) if pid == q_pid]
+
+        q_camids_for_pid = [query_camids[i] for i in q_indices]
+        g_camids_for_pid = [gallery_camids[i] for i in g_indices]
+
+        print(f"[CityFlow]   PID {q_pid}: Query camids={q_camids_for_pid}, Gallery camids={g_camids_for_pid}")
+
+        # Check if query and gallery have different camera IDs for same PID
+        if set(q_camids_for_pid) == set(g_camids_for_pid) and len(g_indices) > 0:
+            pid_camid_issues += 1
+
+    # Create custom dataset classes with filtered data
+    class FilteredReIDDataset(Dataset):
+        """Filtered dataset for CityFlow query/gallery split."""
+        def __init__(self, img_paths, pids, camids, height, width):
+            self.img_paths = img_paths
+            self.pids = pids
+            self.camids = camids
+            self.height = height
+            self.width = width
+
+            # Required for torchreid compatibility
+            self.pid_set = sorted(list(set(self.pids)))
+            self.pid2label = {pid: label for label, pid in enumerate(self.pid_set)}
+            self.num_pids = len(self.pid_set)
+            self.num_imgs = len(self.img_paths)
+
+        def __len__(self):
+            return len(self.img_paths)
+
+        def __getitem__(self, idx):
+            img_path = self.img_paths[idx]
+            pid = self.pids[idx]
+            camid = self.camids[idx]
+
+            # Load and preprocess image
+            img = cv2.imread(img_path)
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            img = cv2.resize(img, (self.width, self.height))
+
+            # Convert to tensor and normalize
+            img = img.astype(np.float32) / 255.0
+            img = (img - np.array([0.485, 0.456, 0.406])) / np.array([0.229, 0.224, 0.225])
+            img = torch.from_numpy(img.transpose(2, 0, 1)).float()
+
+            return img, pid, camid, img_path
+
+    query_dataset = FilteredReIDDataset(
+        query_img_paths, query_pids, query_camids, height, width
+    )
+    gallery_dataset = FilteredReIDDataset(
+        gallery_img_paths, gallery_pids, gallery_camids, height, width
+    )
+
+    # Create dataloaders
+    query_loader = DataLoader(
+        query_dataset,
+        batch_size=batch_size_test,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=True
+    )
+
+    gallery_loader = DataLoader(
+        gallery_dataset,
+        batch_size=batch_size_test,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=True
+    )
+
+    print(f"[CityFlow] Dataloaders created successfully!")
+    print(f"  Train: {len(train_loader.dataset) if hasattr(train_loader, 'dataset') else 'N/A'} images")
+    print(f"  Query: {len(query_dataset)} images")
+    print(f"  Gallery: {len(gallery_dataset)} images")
+
+    return {
+        'train': train_loader,
+        'query': query_loader,
+        'gallery': gallery_loader
+    }
+
+
 def get_dataloaders(
     root: str,
     dataset_name: str = 'market1501',
@@ -547,6 +856,21 @@ def get_dataloaders(
     # Determine dataset type and folder names
     dataset_type = dataset_name.lower().replace('_preprocessed', '')
 
+    # Special handling for CityFlow - split test set into query and gallery
+    if dataset_type == 'cityflow':
+        return get_cityflow_dataloaders(
+            dataset_path=dataset_path,
+            k_shot=k_shot,
+            batch_size_train=batch_size_train,
+            batch_size_test=batch_size_test,
+            height=height,
+            width=width,
+            num_workers=num_workers,
+            seed=seed,
+            opencv_augment=opencv_augment,
+            augment_config=augment_config
+        )
+
     # Folder mapping for different datasets
     folder_map = {
         'market1501': {'train': 'bounding_box_train', 'test': 'bounding_box_test', 'query': 'query'},
@@ -554,7 +878,6 @@ def get_dataloaders(
         'dukemtmc-reid': {'train': 'bounding_box_train', 'test': 'bounding_box_test', 'query': 'query'},
         'veri776': {'train': 'bounding_box_train', 'test': 'bounding_box_test', 'query': 'query'},
         'veri-776': {'train': 'bounding_box_train', 'test': 'bounding_box_test', 'query': 'query'},
-        'cityflow': {'train': 'bounding_box_train', 'test': 'bounding_box_test', 'query': 'query'},
     }
 
     folders = folder_map.get(dataset_type, folder_map['market1501'])
@@ -650,5 +973,3 @@ def get_dataloaders_from_config(
         opencv_augment=params['opencv_augment'],
         augment_config=params['augment_config']
     )
-
-

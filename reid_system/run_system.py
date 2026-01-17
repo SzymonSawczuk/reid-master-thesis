@@ -11,6 +11,9 @@ import numpy as np
 from pathlib import Path
 from tqdm import tqdm
 import sys
+import time
+from collections import defaultdict
+import json
 
 from detection.detector import DetectionModule
 from extraction.extractor import ExtractionModule
@@ -63,6 +66,19 @@ class ReIDSystem:
         self.device = device
         self.confidence_threshold = confidence_threshold
 
+        # Initialize statistics tracking
+        self.stats = {
+            'total_frames': 0,
+            'total_frame_time': 0.0,
+            'total_reid_time': 0.0,
+            'person_queries': 0,
+            'vehicle_queries': 0,
+            'person_found': 0,
+            'vehicle_found': 0,
+            'person_new': 0,
+            'vehicle_new': 0,
+            'per_frame_stats': []
+        }
         
         print("\n[1/5] Initializing detection module...")
         self.detector = DetectionModule(
@@ -100,28 +116,56 @@ class ReIDSystem:
     def process_frame(
         self,
         frame: np.ndarray,
-        frame_id: int = 0
-    ) -> np.ndarray:
+        frame_id: int = 0,
+        collect_stats: bool = True,
+        return_detections: bool = False
+    ) -> tuple:
         """
         Process a single frame.
 
         Args:
             frame: Input frame
             frame_id: Frame number
+            collect_stats: Whether to collect statistics
+            return_detections: Whether to return detections and results for crop saving
 
         Returns:
-            Annotated frame with identities
+            If return_detections=False: (annotated_frame, frame_stats)
+            If return_detections=True: (annotated_frame, frame_stats, detections_data)
+            where detections_data = {'persons': (detections, results), 'vehicles': (detections, results)}
         """
+        frame_start = time.time()
+        frame_stats = {
+            'frame_id': frame_id,
+            'person_queries': 0,
+            'vehicle_queries': 0,
+            'person_found': 0,
+            'vehicle_found': 0,
+            'person_new': 0,
+            'vehicle_new': 0,
+            'reid_time': 0.0,
+            'frame_time': 0.0
+        }
+
         
         detections = self.detector.detect(frame, frame_id)
 
         
+        reid_start = time.time()
         person_results = []
         if len(detections['persons']) > 0:
             person_results = self._process_detections(
                 detections['persons'],
                 category='person'
             )
+
+            if collect_stats:
+                frame_stats['person_queries'] = len(detections['persons'])
+                for result in person_results:
+                    if result.get('is_known', False):
+                        frame_stats['person_found'] += 1
+                    else:
+                        frame_stats['person_new'] += 1
 
         
         vehicle_results = []
@@ -131,7 +175,18 @@ class ReIDSystem:
                 category='vehicle'
             )
 
-        
+            if collect_stats:
+                frame_stats['vehicle_queries'] = len(detections['vehicles'])
+                for result in vehicle_results:
+                    if result.get('is_known', False):
+                        frame_stats['vehicle_found'] += 1
+                    else:
+                        frame_stats['vehicle_new'] += 1
+
+        reid_end = time.time()
+        frame_stats['reid_time'] = reid_end - reid_start
+
+        # Visualize results
         frame_vis = frame.copy()
 
         if len(detections['persons']) > 0:
@@ -152,7 +207,17 @@ class ReIDSystem:
                 confidence_threshold=self.confidence_threshold
             )
 
-        return frame_vis
+        frame_end = time.time()
+        frame_stats['frame_time'] = frame_end - frame_start
+
+        if return_detections:
+            detections_data = {
+                'persons': (detections['persons'], person_results),
+                'vehicles': (detections['vehicles'], vehicle_results)
+            }
+            return frame_vis, frame_stats, detections_data
+        else:
+            return frame_vis, frame_stats
 
     def _process_detections(
         self,
@@ -305,7 +370,9 @@ class ReIDSystem:
         self,
         frames_dir: str,
         output_dir: str,
-        save_frames: bool = True
+        save_frames: bool = True,
+        save_stats: bool = True,
+        save_crops: bool = True
     ):
         """
         Run system on a directory of frames.
@@ -314,10 +381,26 @@ class ReIDSystem:
             frames_dir: Directory containing frames
             output_dir: Output directory for results
             save_frames: Whether to save annotated frames
+            save_stats: Whether to save statistics
+            save_crops: Whether to save cropped detection images organized by identity
         """
         frames_path = Path(frames_dir)
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
+
+        
+        self.stats = {
+            'total_frames': 0,
+            'total_frame_time': 0.0,
+            'total_reid_time': 0.0,
+            'person_queries': 0,
+            'vehicle_queries': 0,
+            'person_found': 0,
+            'vehicle_found': 0,
+            'person_new': 0,
+            'vehicle_new': 0,
+            'per_frame_stats': []
+        }
 
         
         frame_files = sorted(
@@ -334,6 +417,12 @@ class ReIDSystem:
         print(f"Output directory: {output_path}")
 
         
+        if save_crops:
+            crops_dir = output_path / 'detection_crops'
+            crops_dir.mkdir(parents=True, exist_ok=True)
+            print(f"Detection crops will be saved to: {crops_dir}")
+
+        
         for i, frame_file in enumerate(tqdm(frame_files, desc="Processing frames")):
             
             frame = cv2.imread(str(frame_file))
@@ -342,14 +431,178 @@ class ReIDSystem:
                 continue
 
             
-            frame_vis = self.process_frame(frame, frame_id=i)
+            if save_crops:
+                frame_vis, frame_stats, detections_data = self.process_frame(
+                    frame, frame_id=i, collect_stats=True, return_detections=True
+                )
+            else:
+                frame_vis, frame_stats = self.process_frame(
+                    frame, frame_id=i, collect_stats=True, return_detections=False
+                )
 
-            
+            # Update global statistics
+            self.stats['total_frames'] += 1
+            self.stats['total_frame_time'] += frame_stats['frame_time']
+            self.stats['total_reid_time'] += frame_stats['reid_time']
+            self.stats['person_queries'] += frame_stats['person_queries']
+            self.stats['vehicle_queries'] += frame_stats['vehicle_queries']
+            self.stats['person_found'] += frame_stats['person_found']
+            self.stats['vehicle_found'] += frame_stats['vehicle_found']
+            self.stats['person_new'] += frame_stats['person_new']
+            self.stats['vehicle_new'] += frame_stats['vehicle_new']
+            self.stats['per_frame_stats'].append(frame_stats)
+
+            # Save detection crops
+            if save_crops:
+                person_detections, person_results = detections_data['persons']
+                vehicle_detections, vehicle_results = detections_data['vehicles']
+
+                if len(person_detections) > 0:
+                    self._save_detection_crops(
+                        person_detections, person_results, 'person', crops_dir, i
+                    )
+
+                if len(vehicle_detections) > 0:
+                    self._save_detection_crops(
+                        vehicle_detections, vehicle_results, 'vehicle', crops_dir, i
+                    )
+
+            # Save annotated frame
             if save_frames:
                 output_file = output_path / f"result_{frame_file.name}"
                 self.visualizer.save_image(frame_vis, str(output_file))
 
+        # Print and save statistics
+        self._print_statistics()
+
+        if save_stats:
+            stats_file = output_path / 'statistics.json'
+            self._save_statistics(stats_file)
+
         print(f"\nProcessing complete! Results saved to: {output_path}")
+
+    def _print_statistics(self):
+        """Print comprehensive statistics."""
+        print("\n" + "=" * 80)
+        print("REID SYSTEM STATISTICS")
+        print("=" * 80)
+
+        # FPS calculations
+        if self.stats['total_frames'] > 0:
+            avg_frame_time = self.stats['total_frame_time'] / self.stats['total_frames']
+            avg_reid_time = self.stats['total_reid_time'] / self.stats['total_frames']
+            whole_frame_fps = 1.0 / avg_frame_time if avg_frame_time > 0 else 0
+            reid_fps = 1.0 / avg_reid_time if avg_reid_time > 0 else 0
+
+            print(f"\n--- Performance Metrics ---")
+            print(f"Total frames processed: {self.stats['total_frames']}")
+            print(f"Total processing time: {self.stats['total_frame_time']:.2f}s")
+            print(f"Average time per frame (full pipeline): {avg_frame_time*1000:.2f}ms")
+            print(f"Average time per frame (ReID only): {avg_reid_time*1000:.2f}ms")
+            print(f"FPS (full pipeline): {whole_frame_fps:.2f}")
+            print(f"FPS (ReID only): {reid_fps:.2f}")
+
+        # Query statistics
+        total_queries = self.stats['person_queries'] + self.stats['vehicle_queries']
+        total_found = self.stats['person_found'] + self.stats['vehicle_found']
+        total_new = self.stats['person_new'] + self.stats['vehicle_new']
+
+        print(f"\n--- Query Statistics ---")
+        print(f"Total queries: {total_queries}")
+        print(f"  Person queries: {self.stats['person_queries']}")
+        print(f"  Vehicle queries: {self.stats['vehicle_queries']}")
+
+        print(f"\n--- Match Statistics ---")
+        print(f"Found (existing identities): {total_found} ({100*total_found/total_queries:.1f}%)" if total_queries > 0 else "Found: 0")
+        print(f"  Persons found: {self.stats['person_found']} ({100*self.stats['person_found']/self.stats['person_queries']:.1f}%)" if self.stats['person_queries'] > 0 else "  Persons found: 0")
+        print(f"  Vehicles found: {self.stats['vehicle_found']} ({100*self.stats['vehicle_found']/self.stats['vehicle_queries']:.1f}%)" if self.stats['vehicle_queries'] > 0 else "  Vehicles found: 0")
+
+        print(f"\nNew (unknown identities): {total_new} ({100*total_new/total_queries:.1f}%)" if total_queries > 0 else "New: 0")
+        print(f"  Persons new: {self.stats['person_new']} ({100*self.stats['person_new']/self.stats['person_queries']:.1f}%)" if self.stats['person_queries'] > 0 else "  Persons new: 0")
+        print(f"  Vehicles new: {self.stats['vehicle_new']} ({100*self.stats['vehicle_new']/self.stats['vehicle_queries']:.1f}%)" if self.stats['vehicle_queries'] > 0 else "  Vehicles new: 0")
+
+        print("\n" + "=" * 80)
+
+    def _save_statistics(self, output_file: Path):
+        """Save statistics to JSON file."""
+        # Calculate derived metrics
+        stats_output = self.stats.copy()
+
+        if self.stats['total_frames'] > 0:
+            avg_frame_time = self.stats['total_frame_time'] / self.stats['total_frames']
+            avg_reid_time = self.stats['total_reid_time'] / self.stats['total_frames']
+
+            stats_output['metrics'] = {
+                'avg_frame_time_ms': avg_frame_time * 1000,
+                'avg_reid_time_ms': avg_reid_time * 1000,
+                'fps_full_pipeline': 1.0 / avg_frame_time if avg_frame_time > 0 else 0,
+                'fps_reid_only': 1.0 / avg_reid_time if avg_reid_time > 0 else 0
+            }
+
+            total_queries = self.stats['person_queries'] + self.stats['vehicle_queries']
+            total_found = self.stats['person_found'] + self.stats['vehicle_found']
+            total_new = self.stats['person_new'] + self.stats['vehicle_new']
+
+            stats_output['match_rates'] = {
+                'total_queries': total_queries,
+                'total_found': total_found,
+                'total_new': total_new,
+                'found_rate': total_found / total_queries if total_queries > 0 else 0,
+                'new_rate': total_new / total_queries if total_queries > 0 else 0,
+                'person_found_rate': self.stats['person_found'] / self.stats['person_queries'] if self.stats['person_queries'] > 0 else 0,
+                'vehicle_found_rate': self.stats['vehicle_found'] / self.stats['vehicle_queries'] if self.stats['vehicle_queries'] > 0 else 0
+            }
+
+        # Save to file
+        with open(output_file, 'w') as f:
+            json.dump(stats_output, f, indent=2)
+
+        print(f"\nStatistics saved to: {output_file}")
+
+    def _save_detection_crops(
+        self,
+        detections: list,
+        results: list,
+        category: str,
+        crops_dir: Path,
+        frame_id: int
+    ):
+        """
+        Save cropped detection images organized by identity ID.
+
+        Args:
+            detections: List of detections with cropped_image
+            results: List of ReID results
+            category: 'person' or 'vehicle'
+            crops_dir: Base directory for saving crops
+            frame_id: Frame number
+        """
+        for i, (det, result) in enumerate(zip(detections, results)):
+            if result.get('is_known', False):
+                # Save found identities
+                identity_id = result['identity_id']
+                identity_label = result['label']
+
+                # Create folder: crops_dir/found/{category}/{identity_id}_{label}/
+                save_dir = crops_dir / 'found' / category / f"{identity_id}_{identity_label}"
+                save_dir.mkdir(parents=True, exist_ok=True)
+
+                
+                similarity = result.get('similarity', 0.0)
+                filename = f"frame{frame_id:06d}_det{i}_conf{similarity:.3f}.jpg"
+                save_path = save_dir / filename
+
+                cv2.imwrite(str(save_path), det['cropped_image'])
+            else:
+                # Save new/unknown identities
+                save_dir = crops_dir / 'new' / category
+                save_dir.mkdir(parents=True, exist_ok=True)
+
+                
+                filename = f"frame{frame_id:06d}_det{i}.jpg"
+                save_path = save_dir / filename
+
+                cv2.imwrite(str(save_path), det['cropped_image'])
 
     def add_identity_interactive(self, category: str = 'person'):
         """
@@ -408,7 +661,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  
+  # Process frames from a directory with OSNet and AAVeR
   python run_system.py --frames-dir ./camera_frames --output-dir ./results \\
       --person-model /path/to/osnet.pth \\
       --vehicle-model /path/to/aaver.pth \\
@@ -420,7 +673,7 @@ Examples:
       --database-vehicle ./reid_database_vehicle \\
       --confidence 0.8
 
-  
+  # Add a new identity to the database
   python run_system.py --add-identity person \\
       --person-model /path/to/osnet.pth \\
       --person-model-name osnet_x1_0 \\
@@ -521,10 +774,15 @@ Supported vehicle models: resnet50, aaver, rptm, vat
         choices=['person', 'vehicle'],
         help='Add a new identity to the database'
     )
+    parser.add_argument(
+        '--no-save-crops',
+        action='store_true',
+        help='Disable saving detection crops organized by identity'
+    )
 
     args = parser.parse_args()
 
-    
+    # Initialize system
     system = ReIDSystem(
         person_model_path=args.person_model,
         vehicle_model_path=args.vehicle_model,
@@ -540,15 +798,16 @@ Supported vehicle models: resnet50, aaver, rptm, vat
         use_reranking=not args.no_reranking
     )
 
-    
+    # Run mode
     if args.add_identity:
-        
+        # Add identity mode
         system.add_identity_interactive(category=args.add_identity)
     elif args.frames_dir:
-        
+        # Process frames mode
         system.run_on_frames(
             frames_dir=args.frames_dir,
-            output_dir=args.output_dir
+            output_dir=args.output_dir,
+            save_crops=not args.no_save_crops
         )
     else:
         print("Error: Please specify --frames-dir or --add-identity")
