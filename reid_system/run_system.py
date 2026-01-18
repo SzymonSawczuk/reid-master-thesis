@@ -79,6 +79,7 @@ class ReIDSystem:
             'vehicle_new': 0,
             'per_frame_stats': []
         }
+
         
         print("\n[1/5] Initializing detection module...")
         self.detector = DetectionModule(
@@ -186,7 +187,7 @@ class ReIDSystem:
         reid_end = time.time()
         frame_stats['reid_time'] = reid_end - reid_start
 
-        # Visualize results
+        
         frame_vis = frame.copy()
 
         if len(detections['persons']) > 0:
@@ -431,6 +432,7 @@ class ReIDSystem:
                 continue
 
             
+            
             if save_crops:
                 frame_vis, frame_stats, detections_data = self.process_frame(
                     frame, frame_id=i, collect_stats=True, return_detections=True
@@ -440,7 +442,7 @@ class ReIDSystem:
                     frame, frame_id=i, collect_stats=True, return_detections=False
                 )
 
-            # Update global statistics
+            
             self.stats['total_frames'] += 1
             self.stats['total_frame_time'] += frame_stats['frame_time']
             self.stats['total_reid_time'] += frame_stats['reid_time']
@@ -452,7 +454,7 @@ class ReIDSystem:
             self.stats['vehicle_new'] += frame_stats['vehicle_new']
             self.stats['per_frame_stats'].append(frame_stats)
 
-            # Save detection crops
+            
             if save_crops:
                 person_detections, person_results = detections_data['persons']
                 vehicle_detections, vehicle_results = detections_data['vehicles']
@@ -467,12 +469,12 @@ class ReIDSystem:
                         vehicle_detections, vehicle_results, 'vehicle', crops_dir, i
                     )
 
-            # Save annotated frame
+            
             if save_frames:
                 output_file = output_path / f"result_{frame_file.name}"
                 self.visualizer.save_image(frame_vis, str(output_file))
 
-        # Print and save statistics
+        
         self._print_statistics()
 
         if save_stats:
@@ -487,7 +489,7 @@ class ReIDSystem:
         print("REID SYSTEM STATISTICS")
         print("=" * 80)
 
-        # FPS calculations
+        
         if self.stats['total_frames'] > 0:
             avg_frame_time = self.stats['total_frame_time'] / self.stats['total_frames']
             avg_reid_time = self.stats['total_reid_time'] / self.stats['total_frames']
@@ -502,7 +504,7 @@ class ReIDSystem:
             print(f"FPS (full pipeline): {whole_frame_fps:.2f}")
             print(f"FPS (ReID only): {reid_fps:.2f}")
 
-        # Query statistics
+        
         total_queries = self.stats['person_queries'] + self.stats['vehicle_queries']
         total_found = self.stats['person_found'] + self.stats['vehicle_found']
         total_new = self.stats['person_new'] + self.stats['vehicle_new']
@@ -525,7 +527,7 @@ class ReIDSystem:
 
     def _save_statistics(self, output_file: Path):
         """Save statistics to JSON file."""
-        # Calculate derived metrics
+        
         stats_output = self.stats.copy()
 
         if self.stats['total_frames'] > 0:
@@ -553,7 +555,7 @@ class ReIDSystem:
                 'vehicle_found_rate': self.stats['vehicle_found'] / self.stats['vehicle_queries'] if self.stats['vehicle_queries'] > 0 else 0
             }
 
-        # Save to file
+        
         with open(output_file, 'w') as f:
             json.dump(stats_output, f, indent=2)
 
@@ -579,11 +581,11 @@ class ReIDSystem:
         """
         for i, (det, result) in enumerate(zip(detections, results)):
             if result.get('is_known', False):
-                # Save found identities
+                
                 identity_id = result['identity_id']
                 identity_label = result['label']
 
-                # Create folder: crops_dir/found/{category}/{identity_id}_{label}/
+                
                 save_dir = crops_dir / 'found' / category / f"{identity_id}_{identity_label}"
                 save_dir.mkdir(parents=True, exist_ok=True)
 
@@ -594,7 +596,7 @@ class ReIDSystem:
 
                 cv2.imwrite(str(save_path), det['cropped_image'])
             else:
-                # Save new/unknown identities
+                
                 save_dir = crops_dir / 'new' / category
                 save_dir.mkdir(parents=True, exist_ok=True)
 
@@ -603,6 +605,303 @@ class ReIDSystem:
                 save_path = save_dir / filename
 
                 cv2.imwrite(str(save_path), det['cropped_image'])
+
+    def evaluate_yolo_detection(
+        self,
+        frames_dir: str,
+        gt_file: str,
+        output_dir: str,
+        iou_threshold: float = 0.5
+    ):
+        """
+        Evaluate YOLO detection quality against MOT17 ground truth.
+
+        Args:
+            frames_dir: Directory containing video frames
+            gt_file: Path to MOT17 ground truth file (gt.txt)
+            output_dir: Output directory for results
+            iou_threshold: IoU threshold for matching (default: 0.5)
+        """
+        from collections import defaultdict
+
+        print("\n" + "=" * 80)
+        print("YOLO DETECTION EVALUATION")
+        print("=" * 80)
+
+        
+        print(f"\nLoading ground truth from: {gt_file}")
+        gt_data = self._parse_mot17_gt(gt_file)
+        print(f"  Found {len(gt_data)} frames with annotations")
+        print(f"  Total GT boxes: {sum(len(boxes) for boxes in gt_data.values())}")
+
+        
+        frames_path = Path(frames_dir)
+        frame_files = sorted(
+            list(frames_path.glob('*.jpg')) +
+            list(frames_path.glob('*.png'))
+        )
+
+        print(f"\nFound {len(frame_files)} frames in {frames_dir}")
+
+        
+        stats = {
+            'total_frames': 0,
+            'total_gt_boxes': 0,
+            'total_yolo_detections': 0,
+            'total_matches': 0,
+            'total_false_negatives': 0,
+            'total_false_positives': 0,
+            'iou_scores': [],
+            'per_frame_stats': []
+        }
+
+        
+        print(f"\nEvaluating detection (IoU threshold: {iou_threshold})...")
+        for frame_file in tqdm(frame_files, desc="Evaluating YOLO"):
+            
+            frame_num = int(frame_file.stem)
+
+            
+            if frame_num not in gt_data:
+                continue
+
+            
+            frame = cv2.imread(str(frame_file))
+            if frame is None:
+                print(f"  Warning: Failed to read {frame_file}")
+                continue
+
+            
+            gt_boxes = gt_data[frame_num]
+
+            
+            detections = self.detector.detect(frame, frame_id=frame_num)
+            yolo_persons = detections['persons']
+
+            
+            matches, unmatched_gt, unmatched_yolo = self._match_detections(
+                gt_boxes, yolo_persons, iou_threshold
+            )
+
+            
+            stats['total_frames'] += 1
+            stats['total_gt_boxes'] += len(gt_boxes)
+            stats['total_yolo_detections'] += len(yolo_persons)
+            stats['total_matches'] += len(matches)
+            stats['total_false_negatives'] += len(unmatched_gt)
+            stats['total_false_positives'] += len(unmatched_yolo)
+
+            
+            for _, _, iou in matches:
+                stats['iou_scores'].append(iou)
+
+            
+            frame_recall = len(matches) / len(gt_boxes) if len(gt_boxes) > 0 else 0
+            frame_precision = len(matches) / len(yolo_persons) if len(yolo_persons) > 0 else 0
+
+            stats['per_frame_stats'].append({
+                'frame_num': frame_num,
+                'gt_boxes': len(gt_boxes),
+                'yolo_detections': len(yolo_persons),
+                'matches': len(matches),
+                'false_negatives': len(unmatched_gt),
+                'false_positives': len(unmatched_yolo),
+                'recall': frame_recall,
+                'precision': frame_precision
+            })
+
+        
+        self._print_yolo_evaluation_results(stats, iou_threshold)
+
+        
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+        results_file = output_path / 'yolo_evaluation.json'
+        self._save_yolo_evaluation_results(stats, iou_threshold, results_file)
+
+    def _parse_mot17_gt(self, gt_file: str):
+        """
+        Parse MOT17 ground truth file.
+
+        Format: frame,id,x,y,w,h,conf,class,vis
+
+        Returns:
+            dict: {frame_id: [bbox1, bbox2, ...]}
+        """
+        from collections import defaultdict
+
+        gt_data = defaultdict(list)
+
+        with open(gt_file, 'r') as f:
+            for line in f:
+                parts = line.strip().split(',')
+                if len(parts) < 9:
+                    continue
+
+                frame_id = int(parts[0])
+                person_id = int(parts[1])
+                x = float(parts[2])
+                y = float(parts[3])
+                w = float(parts[4])
+                h = float(parts[5])
+                conf = float(parts[6])
+                cls = int(parts[7])
+                vis = float(parts[8])
+
+                
+                if cls == 1 and vis > 0.0:
+                    gt_data[frame_id].append({
+                        'bbox': [x, y, w, h],
+                        'person_id': person_id,
+                        'visibility': vis
+                    })
+
+        return gt_data
+
+    def _calculate_iou(self, box1, box2):
+        """
+        Calculate IoU between two boxes.
+
+        Args:
+            box1: [x, y, w, h] format (MOT17 GT)
+            box2: [x1, y1, x2, y2] format (YOLO output)
+
+        Returns:
+            float: IoU value
+        """
+        
+        x1_box1, y1_box1 = box1[0], box1[1]
+        x2_box1, y2_box1 = box1[0] + box1[2], box1[1] + box1[3]
+
+        
+        x1_box2, y1_box2, x2_box2, y2_box2 = box2
+
+        
+        x1_inter = max(x1_box1, x1_box2)
+        y1_inter = max(y1_box1, y1_box2)
+        x2_inter = min(x2_box1, x2_box2)
+        y2_inter = min(y2_box1, y2_box2)
+
+        if x2_inter < x1_inter or y2_inter < y1_inter:
+            return 0.0
+
+        inter_area = (x2_inter - x1_inter) * (y2_inter - y1_inter)
+
+        
+        box1_area = box1[2] * box1[3]
+        box2_area = (x2_box2 - x1_box2) * (y2_box2 - y1_box2)
+        union_area = box1_area + box2_area - inter_area
+
+        if union_area == 0:
+            return 0.0
+
+        return inter_area / union_area
+
+    def _match_detections(self, gt_boxes, yolo_detections, iou_threshold):
+        """
+        Match YOLO detections to GT boxes using greedy matching.
+
+        Returns:
+            matches: List of (gt_idx, yolo_idx, iou)
+            unmatched_gt: List of unmatched GT indices
+            unmatched_yolo: List of unmatched YOLO indices
+        """
+        if len(gt_boxes) == 0 or len(yolo_detections) == 0:
+            return [], list(range(len(gt_boxes))), list(range(len(yolo_detections)))
+
+        
+        iou_matrix = np.zeros((len(gt_boxes), len(yolo_detections)))
+        for i, gt_box in enumerate(gt_boxes):
+            for j, yolo_det in enumerate(yolo_detections):
+                iou_matrix[i, j] = self._calculate_iou(gt_box['bbox'], yolo_det['bbox'])
+
+        
+        matches = []
+        matched_gt = set()
+        matched_yolo = set()
+
+        
+        candidates = []
+        for i in range(len(gt_boxes)):
+            for j in range(len(yolo_detections)):
+                if iou_matrix[i, j] >= iou_threshold:
+                    candidates.append((i, j, iou_matrix[i, j]))
+
+        candidates.sort(key=lambda x: x[2], reverse=True)
+
+        for gt_idx, yolo_idx, iou in candidates:
+            if gt_idx not in matched_gt and yolo_idx not in matched_yolo:
+                matches.append((gt_idx, yolo_idx, iou))
+                matched_gt.add(gt_idx)
+                matched_yolo.add(yolo_idx)
+
+        unmatched_gt = [i for i in range(len(gt_boxes)) if i not in matched_gt]
+        unmatched_yolo = [i for i in range(len(yolo_detections)) if i not in matched_yolo]
+
+        return matches, unmatched_gt, unmatched_yolo
+
+    def _print_yolo_evaluation_results(self, stats, iou_threshold):
+        """Print YOLO evaluation results."""
+        print("\n" + "=" * 80)
+        print("YOLO DETECTION EVALUATION RESULTS")
+        print("=" * 80)
+
+        recall = stats['total_matches'] / stats['total_gt_boxes'] if stats['total_gt_boxes'] > 0 else 0
+        precision = stats['total_matches'] / stats['total_yolo_detections'] if stats['total_yolo_detections'] > 0 else 0
+        f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
+        avg_iou = np.mean(stats['iou_scores']) if len(stats['iou_scores']) > 0 else 0
+
+        print(f"\n--- Detection Quality ---")
+        print(f"IoU Threshold: {iou_threshold}")
+        print(f"Frames evaluated: {stats['total_frames']}")
+
+        print(f"\n--- Counts ---")
+        print(f"Ground Truth boxes: {stats['total_gt_boxes']}")
+        print(f"YOLO detections: {stats['total_yolo_detections']}")
+        print(f"Matched (True Positives): {stats['total_matches']}")
+        print(f"False Negatives (missed GT): {stats['total_false_negatives']}")
+        print(f"False Positives (extra detections): {stats['total_false_positives']}")
+
+        print(f"\n--- Metrics ---")
+        print(f"Recall (Detection Rate): {recall*100:.2f}%")
+        print(f"  → {recall*100:.2f}% of GT boxes were detected by YOLO")
+        print(f"Precision: {precision*100:.2f}%")
+        print(f"  → {precision*100:.2f}% of YOLO detections matched GT boxes")
+        print(f"F1-Score: {f1*100:.2f}%")
+        print(f"Average IoU (for matches): {avg_iou:.3f}")
+
+        print("\n" + "=" * 80)
+
+    def _save_yolo_evaluation_results(self, stats, iou_threshold, output_file):
+        """Save YOLO evaluation results to JSON."""
+        recall = stats['total_matches'] / stats['total_gt_boxes'] if stats['total_gt_boxes'] > 0 else 0
+        precision = stats['total_matches'] / stats['total_yolo_detections'] if stats['total_yolo_detections'] > 0 else 0
+        f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
+        avg_iou = np.mean(stats['iou_scores']) if len(stats['iou_scores']) > 0 else 0
+
+        results = {
+            'config': {
+                'iou_threshold': iou_threshold
+            },
+            'summary': {
+                'frames_evaluated': stats['total_frames'],
+                'total_gt_boxes': stats['total_gt_boxes'],
+                'total_yolo_detections': stats['total_yolo_detections'],
+                'true_positives': stats['total_matches'],
+                'false_negatives': stats['total_false_negatives'],
+                'false_positives': stats['total_false_positives'],
+                'recall': recall,
+                'precision': precision,
+                'f1_score': f1,
+                'average_iou': avg_iou
+            },
+            'per_frame_stats': stats['per_frame_stats']
+        }
+
+        with open(output_file, 'w') as f:
+            json.dump(results, f, indent=2)
+
+        print(f"\nYOLO evaluation results saved to: {output_file}")
 
     def add_identity_interactive(self, category: str = 'person'):
         """
@@ -677,6 +976,16 @@ Examples:
   python run_system.py --add-identity person \\
       --person-model /path/to/osnet.pth \\
       --person-model-name osnet_x1_0 \\
+      --database-person ./reid_database_person \\
+      --database-vehicle ./reid_database_vehicle
+
+  # Evaluate YOLO detection quality against MOT17 ground truth
+  python run_system.py --frames-dir ./MOT17/train/MOT17-02/img1 \\
+      --gt-file ./MOT17/train/MOT17-02/gt/gt.txt \\
+      --output-dir ./yolo_eval_results \\
+      --evaluate-yolo \\
+      --iou-threshold 0.5 \\
+      --person-model /path/to/osnet.pth \\
       --database-person ./reid_database_person \\
       --database-vehicle ./reid_database_vehicle
 
@@ -779,10 +1088,26 @@ Supported vehicle models: resnet50, aaver, rptm, vat
         action='store_true',
         help='Disable saving detection crops organized by identity'
     )
+    parser.add_argument(
+        '--evaluate-yolo',
+        action='store_true',
+        help='Enable YOLO detection evaluation against MOT17 ground truth'
+    )
+    parser.add_argument(
+        '--gt-file',
+        type=str,
+        help='Path to MOT17 ground truth file (gt.txt) for YOLO evaluation'
+    )
+    parser.add_argument(
+        '--iou-threshold',
+        type=float,
+        default=0.5,
+        help='IoU threshold for detection matching (default: 0.5)'
+    )
 
     args = parser.parse_args()
 
-    # Initialize system
+    
     system = ReIDSystem(
         person_model_path=args.person_model,
         vehicle_model_path=args.vehicle_model,
@@ -798,17 +1123,31 @@ Supported vehicle models: resnet50, aaver, rptm, vat
         use_reranking=not args.no_reranking
     )
 
-    # Run mode
+    
     if args.add_identity:
-        # Add identity mode
+        
         system.add_identity_interactive(category=args.add_identity)
     elif args.frames_dir:
-        # Process frames mode
-        system.run_on_frames(
-            frames_dir=args.frames_dir,
-            output_dir=args.output_dir,
-            save_crops=not args.no_save_crops
-        )
+        
+        if args.evaluate_yolo:
+            if not args.gt_file:
+                print("Error: --gt-file is required when --evaluate-yolo is enabled")
+                parser.print_help()
+                return
+
+            system.evaluate_yolo_detection(
+                frames_dir=args.frames_dir,
+                gt_file=args.gt_file,
+                output_dir=args.output_dir,
+                iou_threshold=args.iou_threshold
+            )
+        else:
+            
+            system.run_on_frames(
+                frames_dir=args.frames_dir,
+                output_dir=args.output_dir,
+                save_crops=not args.no_save_crops
+            )
     else:
         print("Error: Please specify --frames-dir or --add-identity")
         parser.print_help()
