@@ -163,6 +163,47 @@ class DatabaseManager:
         print(f"Updated identity: {identity_id}")
         return True
 
+    def add_feature_to_identity(
+        self,
+        identity_id: str,
+        feature: np.ndarray
+    ) -> bool:
+        """
+        Add an additional feature vector to an existing identity.
+
+        Args:
+            identity_id: Identity ID to add feature to
+            feature: New feature vector to add
+
+        Returns:
+            True if added, False if identity not found
+        """
+        if identity_id not in self.identities:
+            print(f"Identity {identity_id} not found.")
+            return False
+
+        if feature.shape[0] != self.feature_dim:
+            raise ValueError(
+                f"Feature dimension mismatch: expected {self.feature_dim}, "
+                f"got {feature.shape[0]}"
+            )
+
+        current_features = self.features[identity_id]
+        if not isinstance(current_features, list):
+            current_features = [current_features]
+
+        current_features.append(feature)
+        self.features[identity_id] = current_features
+
+        self.identities[identity_id]['updated_at'] = datetime.now().isoformat()
+        self.metadata['updated_at'] = datetime.now().isoformat()
+
+        if self.auto_save:
+            self.save()
+
+        print(f"Added feature to identity: {identity_id} (now has {len(current_features)} features)")
+        return True
+
     def remove_identity(self, identity_id: str) -> bool:
         """
         Remove an identity from the database.
@@ -180,10 +221,10 @@ class DatabaseManager:
         del self.identities[identity_id]
         del self.features[identity_id]
 
-        
+
         self.metadata['updated_at'] = datetime.now().isoformat()
 
-        
+
         if self.auto_save:
             self.save()
 
@@ -219,29 +260,45 @@ class DatabaseManager:
         category: Optional[str] = None
     ) -> Tuple[np.ndarray, List[str]]:
         """
-        Get all feature vectors.
+        Get all feature vectors (expands multiple features per identity).
+
+        If an identity has multiple feature vectors stored as a list,
+        each vector is returned as a separate entry with the same identity_id.
 
         Args:
             category: Filter by category ('person' or 'vehicle')
 
         Returns:
-            features: Feature matrix (shape: [N, D])
-            identity_ids: List of corresponding identity IDs
+            features: Feature matrix (shape: [N, D]) where N = total feature vectors
+            identity_ids: List of corresponding identity IDs (with duplicates if multiple features)
         """
         if category:
-            
-            identity_ids = [
+
+            filtered_ids = [
                 iid for iid, data in self.identities.items()
                 if data['category'] == category
             ]
         else:
-            identity_ids = list(self.identities.keys())
+            filtered_ids = list(self.identities.keys())
 
-        if len(identity_ids) == 0:
+        if len(filtered_ids) == 0:
             return np.array([]), []
 
-        features = np.stack([self.features[iid] for iid in identity_ids])
-        return features, identity_ids
+        all_features = []
+        all_identity_ids = []
+
+        for iid in filtered_ids:
+            feature_data = self.features[iid]
+
+            for feature_vec in feature_data:
+                all_features.append(feature_vec)
+                all_identity_ids.append(iid)
+
+        if len(all_features) == 0:
+            return np.array([]), []
+
+        features = np.stack(all_features)
+        return features, all_identity_ids
 
     def query(
         self,
