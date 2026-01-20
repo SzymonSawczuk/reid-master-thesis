@@ -367,6 +367,176 @@ class ReIDSystem:
 
         return filtered_results
 
+    def run_on_video(
+        self,
+        video_path: str,
+        output_dir: str,
+        save_video: bool = True,
+        save_frames: bool = False,
+        save_stats: bool = True,
+        save_crops: bool = True,
+        frame_skip: int = 0
+    ):
+        """
+        Run system on a video file.
+
+        Args:
+            video_path: Path to input video file (mp4, avi, etc.)
+            output_dir: Output directory for results
+            save_video: Whether to save annotated video
+            save_frames: Whether to save individual annotated frames
+            save_stats: Whether to save statistics
+            save_crops: Whether to save cropped detection images organized by identity
+            frame_skip: Process every N-th frame (0 = process all frames)
+        """
+        video_path = Path(video_path)
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+
+        if not video_path.exists():
+            print(f"Error: Video file not found: {video_path}")
+            return
+
+        
+        cap = cv2.VideoCapture(str(video_path))
+        if not cap.isOpened():
+            print(f"Error: Could not open video file: {video_path}")
+            return
+
+        
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+        print(f"\nVideo properties:")
+        print(f"  Resolution: {width}x{height}")
+        print(f"  FPS: {fps:.2f}")
+        print(f"  Total frames: {total_frames}")
+        if frame_skip > 0:
+            print(f"  Frame skip: Processing every {frame_skip + 1}-th frame")
+
+        
+        self.stats = {
+            'total_frames': 0,
+            'total_frame_time': 0.0,
+            'total_reid_time': 0.0,
+            'person_queries': 0,
+            'vehicle_queries': 0,
+            'person_found': 0,
+            'vehicle_found': 0,
+            'person_new': 0,
+            'vehicle_new': 0,
+            'per_frame_stats': []
+        }
+
+        
+        video_writer = None
+        if save_video:
+            output_video_path = output_path / f"result_{video_path.name}"
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            video_writer = cv2.VideoWriter(
+                str(output_video_path),
+                fourcc,
+                fps / (frame_skip + 1) if frame_skip > 0 else fps,
+                (width, height)
+            )
+            print(f"\nOutput video will be saved to: {output_video_path}")
+
+        
+        if save_crops:
+            crops_dir = output_path / 'detection_crops'
+            crops_dir.mkdir(parents=True, exist_ok=True)
+            print(f"Detection crops will be saved to: {crops_dir}")
+
+        
+        if save_frames:
+            frames_output_dir = output_path / 'frames'
+            frames_output_dir.mkdir(parents=True, exist_ok=True)
+            print(f"Annotated frames will be saved to: {frames_output_dir}")
+
+        print(f"\nProcessing video...")
+
+        
+        frame_id = 0
+        processed_count = 0
+
+        with tqdm(total=total_frames, desc="Processing video") as pbar:
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+
+                
+                if frame_skip > 0 and (frame_id % (frame_skip + 1) != 0):
+                    frame_id += 1
+                    pbar.update(1)
+                    continue
+
+                
+                
+                if save_crops:
+                    frame_vis, frame_stats, detections_data = self.process_frame(
+                        frame, frame_id=processed_count, collect_stats=True, return_detections=True
+                    )
+                else:
+                    frame_vis, frame_stats = self.process_frame(
+                        frame, frame_id=processed_count, collect_stats=True, return_detections=False
+                    )
+
+                
+                self.stats['total_frames'] += 1
+                self.stats['total_frame_time'] += frame_stats['frame_time']
+                self.stats['total_reid_time'] += frame_stats['reid_time']
+                self.stats['person_queries'] += frame_stats['person_queries']
+                self.stats['vehicle_queries'] += frame_stats['vehicle_queries']
+                self.stats['person_found'] += frame_stats['person_found']
+                self.stats['vehicle_found'] += frame_stats['vehicle_found']
+                self.stats['person_new'] += frame_stats['person_new']
+                self.stats['vehicle_new'] += frame_stats['vehicle_new']
+                self.stats['per_frame_stats'].append(frame_stats)
+
+                
+                if save_crops:
+                    person_detections, person_results = detections_data['persons']
+                    vehicle_detections, vehicle_results = detections_data['vehicles']
+
+                    if len(person_detections) > 0:
+                        self._save_detection_crops(
+                            person_detections, person_results, 'person', crops_dir, processed_count
+                        )
+
+                    if len(vehicle_detections) > 0:
+                        self._save_detection_crops(
+                            vehicle_detections, vehicle_results, 'vehicle', crops_dir, processed_count
+                        )
+
+                
+                if save_video and video_writer is not None:
+                    video_writer.write(frame_vis)
+
+                
+                if save_frames:
+                    output_file = frames_output_dir / f"frame_{processed_count:06d}.jpg"
+                    self.visualizer.save_image(frame_vis, str(output_file))
+
+                frame_id += 1
+                processed_count += 1
+                pbar.update(1)
+
+        
+        cap.release()
+        if video_writer is not None:
+            video_writer.release()
+
+        self._print_statistics()
+
+        if save_stats:
+            stats_file = output_path / 'statistics.json'
+            self._save_statistics(stats_file)
+
+        print(f"\nProcessing complete! Results saved to: {output_path}")
+
     def run_on_frames(
         self,
         frames_dir: str,
@@ -389,7 +559,7 @@ class ReIDSystem:
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
 
-        
+
         self.stats = {
             'total_frames': 0,
             'total_frame_time': 0.0,
@@ -979,6 +1149,14 @@ Examples:
       --database-person ./reid_database_person \\
       --database-vehicle ./reid_database_vehicle
 
+  # Process video file
+  python run_system.py --video ./input_video.mp4 \\
+      --output-dir ./results \\
+      --person-model /path/to/osnet.pth \\
+      --database-person ./reid_database_person \\
+      --database-vehicle ./reid_database_vehicle \\
+      --frame-skip 0
+
   # Evaluate YOLO detection quality against MOT17 ground truth
   python run_system.py --frames-dir ./MOT17/train/MOT17-02/img1 \\
       --gt-file ./MOT17/train/MOT17-02/gt/gt.txt \\
@@ -996,6 +1174,11 @@ Supported vehicle models: resnet50, aaver, rptm, vat
     )
 
     parser.add_argument(
+        '--video',
+        type=str,
+        help='Path to input video file (mp4, avi, etc.)'
+    )
+    parser.add_argument(
         '--frames-dir',
         type=str,
         help='Directory containing camera frames'
@@ -1005,6 +1188,12 @@ Supported vehicle models: resnet50, aaver, rptm, vat
         type=str,
         default='./reid_results',
         help='Output directory for results'
+    )
+    parser.add_argument(
+        '--frame-skip',
+        type=int,
+        default=0,
+        help='Process every N-th frame (0 = process all frames, only for video input)'
     )
     parser.add_argument(
         '--person-model',
@@ -1123,12 +1312,20 @@ Supported vehicle models: resnet50, aaver, rptm, vat
         use_reranking=not args.no_reranking
     )
 
-    
+
     if args.add_identity:
-        
+
         system.add_identity_interactive(category=args.add_identity)
+    elif args.video:
+        # Video processing mode
+        system.run_on_video(
+            video_path=args.video,
+            output_dir=args.output_dir,
+            save_crops=not args.no_save_crops,
+            frame_skip=args.frame_skip
+        )
     elif args.frames_dir:
-        
+
         if args.evaluate_yolo:
             if not args.gt_file:
                 print("Error: --gt-file is required when --evaluate-yolo is enabled")
@@ -1142,14 +1339,14 @@ Supported vehicle models: resnet50, aaver, rptm, vat
                 iou_threshold=args.iou_threshold
             )
         else:
-            
+
             system.run_on_frames(
                 frames_dir=args.frames_dir,
                 output_dir=args.output_dir,
                 save_crops=not args.no_save_crops
             )
     else:
-        print("Error: Please specify --frames-dir or --add-identity")
+        print("Error: Please specify --video, --frames-dir, or --add-identity")
         parser.print_help()
 
 
