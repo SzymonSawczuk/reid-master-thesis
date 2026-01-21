@@ -290,8 +290,13 @@ class DatabaseManager:
         for iid in filtered_ids:
             feature_data = self.features[iid]
 
-            for feature_vec in feature_data:
-                all_features.append(feature_vec)
+            if isinstance(feature_data, list):
+                # Multiple features - add each one separately
+                for feature_vec in feature_data:
+                    all_features.append(feature_vec)
+                    all_identity_ids.append(iid)
+            else:
+                all_features.append(feature_data)
                 all_identity_ids.append(iid)
 
         if len(all_features) == 0:
